@@ -86,14 +86,16 @@ int run(const char *name) {
 //param: takes path of the folder as char array
 void setupRoot(const char* folder){
     chroot(folder);
+    isOK(chroot(folder),"chroot");
     chdir("/");
+    isOK(chdir("/"),"chdir");
 }
 
 //custom clone function to make the child process
 //using template for generic type.
 //param: function that is to be cloned and flags to send clone
-template <typename Function>
-void cloneProcess(Function&& function, int flags){
+// template <typename Function>
+void cloneProcess(int (*function)(void*), int flags){
     auto pid = clone(function, stack_memory(), flags, 0);
     isOK(pid,"clone");
     wait(nullptr);
@@ -107,6 +109,7 @@ void cloneProcess(Function&& function, int flags){
 //the child process
 int jail(void* args){
     setMaxProcessNum();
+    // createCgroup(CGROUP_NAME);
     std::cout<<"Child pid: "<<getpid()<<std::endl;
     setHostname("my-container");
     setupVariables();
@@ -116,6 +119,7 @@ int jail(void* args){
 
     //making runnable lambda function
     auto shell = lambda(run("/bin/sh"))
+    //SIGCHILD flag tells the process to emit a signal when the process is finished
     cloneProcess(shell, SIGCHLD);
 
     ///unmount the file system when the process ends
