@@ -1,11 +1,4 @@
-#include"required.h"
-
-//path specified to the cgroup (pids) in which we want to write our process 
-#define REQUIRED_CGROUP "/sys/fs/cgroup/pids/container/"
-#define concat(a,b) (a"" b)
-
-//restricting maximum allowed processes to prevent any memory overflow
-#define MAX_ALLOWED_PROCESSES "5"
+#include"header.h"
 
 /*check for any errors using a custom try function
 params: takes an int status and a pointer to a character array (string) messege
@@ -64,7 +57,7 @@ void setupVariables(){
 
 //allocating 65kb of stack memory to use in the clone function
 char* stack_memory() {
-    const int stackSize = 65536;
+    const int stackSize = 65*1024;
     //nothrow object is used to throw nullptr if memory can not be allocated
     auto *stack = new (std::nothrow) char[stackSize];
 
