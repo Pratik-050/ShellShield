@@ -86,7 +86,6 @@ int run(const char *name) {
 //param: takes path of the folder as char array
 void setupRoot(const char* folder){
     chroot(folder);
-    isOK(chroot(folder),"chroot");
     chdir("/");
     isOK(chdir("/"),"chdir");
 }
@@ -101,10 +100,6 @@ void cloneProcess(int (*function)(void*), int flags){
     wait(nullptr);
 }
 
-//lambda function
-//it takes a function as argument.
-//it takes a void argument named args and returns in. Inside the lambda function, it executes the provided fn_body (the macro argument) and then returns 0.
-#define lambda(fn_body) [](void *args) ->int { fn_body; return 0;};
 
 //the child process
 int jail(void* args){
@@ -117,10 +112,8 @@ int jail(void* args){
     //attach the proc file system (procfs) to the file hierarchy
     mount("proc","/proc","proc",0,0);
 
-    //making runnable lambda function
-    auto shell = lambda(run("/bin/sh"))
     //SIGCHILD flag tells the process to emit a signal when the process is finished
-    cloneProcess(shell, SIGCHLD);
+    cloneProcess([](void *args) ->int { run("/bin/sh"); return 0;}, SIGCHLD);
 
     ///unmount the file system when the process ends
     umount("proc");
