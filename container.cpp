@@ -27,10 +27,11 @@ void WRITE(const char* path,const char* value){
     close(targetFile);
 }
 
-//restrict process creation
-//return: void; 
-//We can change number of processes using the container_config file. Also this function sets other
-//resource limits for the container
+/*restrict process creation
+return: void; 
+We can change number of processes using the container_config 
+file. Also this function sets other
+resource limits for the container*/
 
 void setMaxProcessNum(){
     mkdir(REQUIRED_CGROUP, S_IRUSR|S_IWUSR);
@@ -40,10 +41,19 @@ void setMaxProcessNum(){
 
     INIParser parser;
     const char* maxProcess = "";
+    const char* cpuPeriod = "";
+    const char* cpuQuota = "";
+    const char* memoryQuota = "";
     if(parser.load("container_config.ini")){
         maxProcess = parser.getValue("container", "max_proceses", "5").c_str();
+        cpuPeriod = parser.getValue("container","cpu_period","100000").c_str();
+        cpuQuota = parser.getValue("container","cpu_quota","20000").c_str();
+        memoryQuota = parser.getValue("container","memory_quota","50M").c_str();
     }
 
+    WRITE(concat(CGROUP_CPU_FOLDER,"cpu.cfs_quota_us"),cpuQuota);
+    WRITE(concat(CGROUP_CPU_FOLDER,"cpu.cfs_period_us"),cpuPeriod);
+    WRITE(concat(CGROUP_MEMORY_FOLDER,"memory.limit_in_bytes"),memoryQuota);
     WRITE(concat(REQUIRED_CGROUP, "pids.max"), maxProcess);
     WRITE(concat(REQUIRED_CGROUP,"notify_on_release"),"1");
     WRITE(concat(REQUIRED_CGROUP,"cgroup.procs"),pid);
@@ -94,7 +104,7 @@ void setupRoot(const char* folder){
 //custom clone function to make the child process
 //using template for generic type.
 //param: function that is to be cloned and flags to send clone
-// template <typename Function>
+
 void cloneProcess(int (*function)(void*), int flags){
     auto pid = clone(function, stack_memory(), flags, 0);
     isOK(pid,"clone");
@@ -130,6 +140,15 @@ int jail(void* args){
 //parent process
 int main(int argc, char** argv){
     std::cout<<"Parent pid: "<<getpid()<<std::endl;
+
+    //make a directory in the cpu cgroup in which our container will run
+    mkdir(CGROUP_CPU_FOLDER, S_IRUSR | S_IWUSR);
+    //make a directory in the memory cgroup in which our container will run
+    mkdir(CGROUP_MEMORY_FOLDER, S_IRUSR | S_IWUSR);
+
+    WRITE(concat(CGROUP_CPU_FOLDER,"tasks"),std::to_string(getpid()).c_str());
+    WRITE(concat(CGROUP_MEMORY_FOLDER,"tasks"),std::to_string(getpid()).c_str());
+
     cloneProcess(jail,CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD);
 
     return EXIT_SUCCESS;
