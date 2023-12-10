@@ -1,4 +1,5 @@
 #include"header.h"
+#include"INIParser.h"
 
 /*check for any errors using a custom try function
 params: takes an int status and a pointer to a character array (string) messege
@@ -28,7 +29,8 @@ void WRITE(const char* path,const char* value){
 
 //restrict process creation
 //return: void; 
-//it just restricts the number of maximum allowed processes to be 5. More precisely saying 3, as the container itself and the shell that we are going to launch taes up 2 processes.
+//We can change number of processes using the container_config file. Also this function sets other
+//resource limits for the container
 
 void setMaxProcessNum(){
     mkdir(REQUIRED_CGROUP, S_IRUSR|S_IWUSR);
@@ -36,7 +38,13 @@ void setMaxProcessNum(){
 //The c_str() method converts a string to an array of characters with a null character at the end.
     const char* pid = std::to_string(getpid()).c_str();
 
-    WRITE(concat(REQUIRED_CGROUP, "pids.max"), MAX_ALLOWED_PROCESSES);
+    INIParser parser;
+    const char* maxProcess = "";
+    if(parser.load("container_config.ini")){
+        maxProcess = parser.getValue("container", "max_proceses", "5").c_str();
+    }
+
+    WRITE(concat(REQUIRED_CGROUP, "pids.max"), maxProcess);
     WRITE(concat(REQUIRED_CGROUP,"notify_on_release"),"1");
     WRITE(concat(REQUIRED_CGROUP,"cgroup.procs"),pid);
 }
@@ -97,11 +105,17 @@ void cloneProcess(int (*function)(void*), int flags){
 //the child process
 int jail(void* args){
     setMaxProcessNum();
-    // createCgroup(CGROUP_NAME);
+
+    INIParser parser;
+    const char* root = "";
+    if(parser.load("container_config.ini")){
+        root = parser.getValue("container","custom_root","./root").c_str();
+    }
+
     std::cout<<"Child pid: "<<getpid()<<std::endl;
     setHostname("my-container");
     setupVariables();
-    setupRoot("./root");
+    setupRoot(root);
     //attach the proc file system (procfs) to the file hierarchy
     mount("proc","/proc","proc",0,0);
 
