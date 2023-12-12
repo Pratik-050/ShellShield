@@ -3,9 +3,10 @@
 
 /*check for any errors using a custom try function
 params: takes an int status and a pointer to a character array (string) messege
-return: returns the same int status if code block works fine or prints the error msg by calling the perror function and returns the error msg using exit function.
-The C standard specifies two constants, EXIT_SUCCESS and EXIT_FAILURE, that may be passed to exit() to indicate successful or unsuccessful termination, respectively.*/
-
+return: returns the same int status if code block works fine or prints the error msg by calling 
+the perror function and returns the error msg using exit function.
+The C standard specifies two constants, EXIT_SUCCESS and EXIT_FAILURE, that may 
+be passed to exit() to indicate successful or unsuccessful termination, respectively.*/
 int isOK(int status,const char* msg){
     if(status == -1)
     {
@@ -22,41 +23,17 @@ params: takes two string pointers path and value.
 return: void*/
 
 void WRITE(const char* path,const char* value){
-    int targetFile = open(path, O_WRONLY|O_APPEND);
-    write(targetFile,value,strlen(value));
-    close(targetFile);
-}
-
-/*restrict process creation
-return: void; 
-We can change number of processes using the container_config 
-file. Also this function sets other
-resource limits for the container*/
-
-void setMaxProcessNum(){
-    mkdir(REQUIRED_CGROUP, S_IRUSR|S_IWUSR);
-
-//The c_str() method converts a string to an array of characters with a null character at the end.
-    const char* pid = std::to_string(getpid()).c_str();
-
-    INIParser parser;
-    const char* maxProcess = "";
-    const char* cpuPeriod = "";
-    const char* cpuQuota = "";
-    const char* memoryQuota = "";
-    if(parser.load("container_config.ini")){
-        maxProcess = parser.getValue("container", "max_proceses", "5").c_str();
-        cpuPeriod = parser.getValue("container","cpu_period","100000").c_str();
-        cpuQuota = parser.getValue("container","cpu_quota","20000").c_str();
-        memoryQuota = parser.getValue("container","memory_quota","50M").c_str();
+    int fd = open(path, O_WRONLY|O_APPEND);
+    if(fd == -1) {
+        std::cout<<"error while opening\n";
+        exit(1);
     }
-
-    WRITE(concat(CGROUP_CPU_FOLDER,"cpu.cfs_quota_us"),cpuQuota);
-    WRITE(concat(CGROUP_CPU_FOLDER,"cpu.cfs_period_us"),cpuPeriod);
-    WRITE(concat(CGROUP_MEMORY_FOLDER,"memory.limit_in_bytes"),memoryQuota);
-    WRITE(concat(REQUIRED_CGROUP, "pids.max"), maxProcess);
-    WRITE(concat(REQUIRED_CGROUP,"notify_on_release"),"1");
-    WRITE(concat(REQUIRED_CGROUP,"cgroup.procs"),pid);
+    ssize_t bytes = write(fd,value,strlen(value));
+    if(bytes == -1){
+        std::cout<<"error while writing\n";
+        exit(1);
+    }
+    close(fd);
 }
 
 //setting hostname of the container
@@ -96,60 +73,104 @@ int run(const char *name) {
 //setup the root
 //param: takes path of the folder as char array
 void setupRoot(const char* folder){
-    chroot(folder);
-    chdir("/");
+    isOK(chroot(folder),"can't set root: ");
     isOK(chdir("/"),"chdir");
 }
 
-//custom clone function to make the child process
-//using template for generic type.
-//param: function that is to be cloned and flags to send clone
-
+//custom clone function to make the child processes
+//param: function that is to be cloned and flags to send clone function that makes the new namespace
 void cloneProcess(int (*function)(void*), int flags){
     auto pid = clone(function, stack_memory(), flags, 0);
     isOK(pid,"clone");
     wait(nullptr);
 }
 
-
-//the child process
-int jail(void* args){
-    setMaxProcessNum();
-
+/*restrict process creation
+return: void; 
+We can change number of processes using the container_config 
+file. Also this function sets other
+resource limits for the container i.e-> the jailed process*/
+void setupJail(){
     INIParser parser;
-    const char* root = "";
-    if(parser.load("container_config.ini")){
-        root = parser.getValue("container","custom_root","./root").c_str();
+    if(!parser.load("container_config.ini")){
+        std::cout<<"can't load .ini\n";
+        exit(1);
     }
+    const char* root = parser.getValue("container","custom_root","./root").c_str();
+    const char* maxProcess = parser.getValue("container", "maxProcesses", "5").c_str();
+    const char* cpuPeriod = parser.getValue("container","cpu_period","100000").c_str();
+    const char* cpuQuota = parser.getValue("container","cpu_quota","20000").c_str();
+    const char* memoryQuota = parser.getValue("container","memory_quota","50M").c_str();
+    const char* hostName = parser.getValue("container","host_name","my-container").c_str();
+    
+    long long memory = atoi(memoryQuota);
+    memory = memory << 20;
+    memoryQuota = std::to_string(memory).c_str();
 
-    std::cout<<"Child pid: "<<getpid()<<std::endl;
-    setHostname("my-container");
+    //The c_str() method converts a string to an array of characters with a null character at the end.
+    const char* pid = std::to_string(getpid()).c_str();
+    std::cout<<"Child PID: "<<pid<<std::endl;
+
+    WRITE(concat(REQUIRED_CGROUP,"cgroup.procs"),pid);
+    WRITE(concat(CGROUP_CPU_FOLDER,"cpu.cfs_quota_us"),cpuQuota);
+    WRITE(concat(CGROUP_CPU_FOLDER,"cpu.cfs_period_us"),cpuPeriod);
+    WRITE(concat(CGROUP_MEMORY_FOLDER,"memory.limit_in_bytes"),memoryQuota);
+    WRITE(concat(REQUIRED_CGROUP, "pids.max"), maxProcess);
+    
+    //setup the container
+    setHostname(hostName);
     setupVariables();
     setupRoot(root);
+
+}
+
+void makeCgroup(){
+
+    //make a directory in the pids cgroup to run a container    
+    mkdir(REQUIRED_CGROUP, S_IRUSR|S_IWUSR);
+    //make a directory in the cpu cgroup in which our container will run
+    mkdir(CGROUP_CPU_FOLDER, S_IRUSR | S_IWUSR);
+    //make a directory in the memory cgroup in which our container will run
+    mkdir(CGROUP_MEMORY_FOLDER, S_IRUSR | S_IWUSR);
+
+}
+
+//remove all the directories after termination of the container
+void removeCgroup(){
+    rmdir(REQUIRED_CGROUP);
+    rmdir(CGROUP_CPU_FOLDER);
+    rmdir(CGROUP_MEMORY_FOLDER);
+}
+
+int jail(void* args){
+    setupJail();
+
     //attach the proc file system (procfs) to the file hierarchy
     mount("proc","/proc","proc",0,0);
 
-    //SIGCHILD flag tells the process to emit a signal when the process is finished
-    cloneProcess([](void *args) ->int { run("/bin/sh"); return 0;}, SIGCHLD);
+    pid_t shellPid = fork();
+    isOK(shellPid,"can't create shell: ");
+    if(shellPid == 0){
+        run("/bin/sh");
+        exit(0);
+    }
+
+    while(wait(nullptr) > 0);
 
     ///unmount the file system when the process ends
     umount("proc");
+
     return EXIT_SUCCESS;
 }
 
 //parent process
 int main(int argc, char** argv){
     std::cout<<"Parent pid: "<<getpid()<<std::endl;
-
-    //make a directory in the cpu cgroup in which our container will run
-    mkdir(CGROUP_CPU_FOLDER, S_IRUSR | S_IWUSR);
-    //make a directory in the memory cgroup in which our container will run
-    mkdir(CGROUP_MEMORY_FOLDER, S_IRUSR | S_IWUSR);
-
-    WRITE(concat(CGROUP_CPU_FOLDER,"tasks"),std::to_string(getpid()).c_str());
-    WRITE(concat(CGROUP_MEMORY_FOLDER,"tasks"),std::to_string(getpid()).c_str());
+    makeCgroup();
 
     cloneProcess(jail,CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD);
+
+    removeCgroup();
 
     return EXIT_SUCCESS;
 }

@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <fstream>
+#include<cstdlib>
 
 //path specified to the cgroup (pids) in which we want to write our process 
 #define REQUIRED_CGROUP "/sys/fs/cgroup/pids/container/"
