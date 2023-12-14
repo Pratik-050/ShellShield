@@ -39,6 +39,7 @@ void WRITE(const char* path,const char* value){
 //setting hostname of the container
 //param: takes hostname as string
 void setHostname(std::string hostname){
+    // return 0 for successful case other wise -1
     isOK(sethostname(hostname.c_str(),hostname.size()),"HostName Error");
 }
 
@@ -46,8 +47,9 @@ void setHostname(std::string hostname){
 void setupVariables(){
     clearenv();
     // we use 0 as overwrite as we want to check if the variable already exist in the environment, and if it does exist then don't change it, if doesn't exist then add that variable
-    isOK(setenv("TERM", "xterm-256color", 0),"Term Error");
-    isOK(setenv("PATH", "/bin/:/sbin/:usr/bin:/usr/sbin", 0),"Path Error");
+    isOK(setenv("TERM", "xterm-256color", 0),"Terminal Env Error"); //show colors in terminal
+    // shell will search for executable files in path (/bin,/sbin,usr/bin,usr/sbin)
+    isOK(setenv("PATH", "/bin/:/sbin/:usr/bin:/usr/sbin", 0),"Path Env Error"); 
 }
 
 //allocating 65kb of stack memory to use in the clone function
@@ -100,7 +102,7 @@ void setupJail(){
     const char* cpuManage = config["cpu_manage"].c_str();
     const char* memoryQuota = config["memory_quota"].c_str();
     const char* hostName = config["host_name"].c_str();
-    
+    cout<<config["custom_root"];
 
     //write values to respective controller files 
     WRITE(CGROUP_MEMORY_FOLDER,memoryQuota);
@@ -114,15 +116,17 @@ void setupJail(){
 
 }
 
+
+
 void makeCgroup(){
-    //enable cpu controller in root cgroup
+    //enables cpu,memory,pids controller in root cgroup,allowing for the use of these controllers in other cgroups
     WRITE(CGROUP_SUBTREE,"+cpu +memory +pids");
-    //make a directory cgroup to run a container    
+    //make a directory in cgroup to run a container    
     mkdir(REQUIRED_CGROUP, S_IRUSR|S_IWUSR);
 
+    //writes the pid to the cgroup.procs file within REQUIRED_CGROUP,
     const char* pid = std::to_string(getpid()).c_str();
     std::cout<<"Child PID: "<<pid<<std::endl;
-
     WRITE(concat(REQUIRED_CGROUP,"/cgroup.procs"),pid);
     
     
@@ -134,14 +138,14 @@ int jail(void* args){
     //attach the proc file system (procfs) to the file hierarchy
     mount("proc","/proc","proc",0,0);
 
-    pid_t shellPid = fork();
+    pid_t shellPid = fork(); //creating shell in container cgroup 
     isOK(shellPid,"can't create shell: ");
     if(shellPid == 0){
         run("/bin/bash");
         exit(0);
     }
 
-    while(wait(nullptr) > 0);
+    while(wait(nullptr) > 0); //wait until all child processes are completed
 
     ///unmount the file system when the process ends
     umount("proc");
