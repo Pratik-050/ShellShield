@@ -20,5 +20,3 @@
 #define CGROUP_MEMORY_FOLDER "/sys/fs/cgroup/memory/container/"
 
 
-//restricting maximum allowed processes to prevent any memory overflow
-#define MAX_ALLOWED_PROCESSES "5"
