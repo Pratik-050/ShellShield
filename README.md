@@ -1,8 +1,8 @@
 # ShellShield
 
 This project includes building a simple container from scratch.
-It'll contain system,process and signals concepts. We'll use C++
-to code the entire project.
+It'll contain system,process and signals concepts from (OS).
+This project uses CGROUPS V1, a newer version of CGROUPs is available.
 
 # How to run
 
